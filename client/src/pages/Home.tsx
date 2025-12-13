@@ -239,9 +239,12 @@ export default function Home() {
   
   const [activeCipher, setActiveCipher] = useState<"caesar" | "vigenere" | "rsa">("caesar");
   
-  const [message, setMessage] = useState("");
-  const [result, setResult] = useState("");
-  const [mode, setMode] = useState<"encrypt" | "decrypt">("encrypt");
+  const [encryptMessage, setEncryptMessage] = useState("");
+  const [decryptMessage, setDecryptMessage] = useState("");
+  const [encryptResult, setEncryptResult] = useState("");
+  const [decryptResult, setDecryptResult] = useState("");
+  const [showMathAnimation, setShowMathAnimation] = useState(false);
+  const [animatingLetter, setAnimatingLetter] = useState({ from: "", to: "", step: 0 });
   
   // Caesar State
   const [caesarShift, setCaesarShift] = useState(3);
@@ -269,45 +272,85 @@ export default function Home() {
     }
   }, [p, q]);
 
-  // Auto-update result when inputs change
+  // Auto-update encrypt result when inputs change
   useEffect(() => {
     let output = "";
     if (activeCipher === "caesar") {
-      output = caesarCipher(message, caesarShift, mode === "decrypt");
+      output = caesarCipher(encryptMessage, caesarShift, false);
     } else if (activeCipher === "vigenere") {
-      output = vigenereCipher(message, vigenereKey, mode === "decrypt");
+      output = vigenereCipher(encryptMessage, vigenereKey, false);
     } else if (activeCipher === "rsa") {
-       if (mode === "encrypt") {
-         output = rsaEncrypt(message, keys.publicKey.e, keys.publicKey.n);
-       } else {
-         output = rsaDecrypt(message, keys.privateKey.d, keys.privateKey.n);
-       }
+      output = rsaEncrypt(encryptMessage, keys.publicKey.e, keys.publicKey.n);
     }
-    setResult(output);
-  }, [message, caesarShift, vigenereKey, mode, activeCipher, keys]);
+    setEncryptResult(output);
+    
+    // Trigger animation when there's input
+    if (encryptMessage.length > 0) {
+      const cleanMsg = encryptMessage.toUpperCase().replace(/[^A-Z]/g, "");
+      if (cleanMsg.length > 0) {
+        const firstChar = cleanMsg[0];
+        let resultChar = "";
+        if (activeCipher === "caesar") {
+          resultChar = caesarCipher(firstChar, caesarShift, false);
+        } else if (activeCipher === "vigenere") {
+          resultChar = vigenereCipher(firstChar, vigenereKey, false);
+        }
+        if (resultChar && resultChar !== animatingLetter.to) {
+          setAnimatingLetter({ from: firstChar, to: resultChar, step: 0 });
+          setShowMathAnimation(true);
+        }
+      }
+    }
+  }, [encryptMessage, caesarShift, vigenereKey, activeCipher, keys]);
 
-  const handleAction = (newMode: "encrypt" | "decrypt") => {
-    setMode(newMode);
+  // Auto-update decrypt result when inputs change
+  useEffect(() => {
+    let output = "";
+    if (activeCipher === "caesar") {
+      output = caesarCipher(decryptMessage, caesarShift, true);
+    } else if (activeCipher === "vigenere") {
+      output = vigenereCipher(decryptMessage, vigenereKey, true);
+    } else if (activeCipher === "rsa") {
+      output = rsaDecrypt(decryptMessage, keys.privateKey.d, keys.privateKey.n);
+    }
+    setDecryptResult(output);
+  }, [decryptMessage, caesarShift, vigenereKey, activeCipher, keys]);
+
+  // Mathematical animation effect
+  useEffect(() => {
+    if (showMathAnimation && animatingLetter.step < 5) {
+      const timer = setTimeout(() => {
+        setAnimatingLetter(prev => ({ ...prev, step: prev.step + 1 }));
+      }, 300);
+      return () => clearTimeout(timer);
+    } else if (animatingLetter.step >= 5) {
+      setTimeout(() => setShowMathAnimation(false), 1000);
+    }
+  }, [showMathAnimation, animatingLetter.step]);
+
+  const triggerAnimation = () => {
     setIsAnimating(true);
     setTimeout(() => setIsAnimating(false), 500);
   };
 
   const resetApp = () => {
-    setMessage("");
+    setEncryptMessage("");
+    setDecryptMessage("");
     setCaesarShift(3);
     setVigenereKey("MATHS");
-    // Reset RSA default primes
     setP(11);
     setQ(17);
-    setMode("encrypt");
-    setResult("");
+    setEncryptResult("");
+    setDecryptResult("");
+    setShowMathAnimation(false);
   };
 
-  // Calculation for the explanation modal
-  const getExplanationData = () => {
-    const cleanMessage = message.toUpperCase().replace(/[^A-Z]/g, "");
+  // Calculation for the explanation modal (uses encrypt message for demonstration)
+  const getExplanationData = (isEncryptMode: boolean = true) => {
+    const msgToUse = isEncryptMode ? encryptMessage : decryptMessage;
+    const cleanMessage = msgToUse.toUpperCase().replace(/[^A-Z]/g, "");
     const firstChar = cleanMessage.length > 0 ? cleanMessage[0] : "A";
-    const charIndex = ALPHABET.indexOf(firstChar) + 1; // RSA uses 1-based index here for math
+    const charIndex = ALPHABET.indexOf(firstChar) + 1;
     
     let shift = 0;
     let keyChar = "";
@@ -320,9 +363,8 @@ export default function Home() {
       keyChar = cleanKey.length > 0 ? cleanKey[0] : "A";
       shift = ALPHABET.indexOf(keyChar);
     } else if (activeCipher === "rsa") {
-      // RSA explanation logic
-      const m = charIndex; // Using 1-based index (A=1) for RSA demo
-      if (mode === "encrypt") {
+      const m = charIndex;
+      if (isEncryptMode) {
         rsaCalc = {
           m: m,
           e: keys.publicKey.e,
@@ -332,12 +374,11 @@ export default function Home() {
           step2: `${m}^${keys.publicKey.e} mod ${keys.publicKey.n}`
         };
       } else {
-        // For decryption explanation, take the first number from message
-        const nums = message.trim().split(" ");
+        const nums = decryptMessage.trim().split(" ");
         const firstNum = parseInt(nums[0]) || 0;
         rsaCalc = {
           m: firstNum,
-          e: keys.privateKey.d, // using d as exponent
+          e: keys.privateKey.d,
           n: keys.privateKey.n,
           res: modPow(firstNum, keys.privateKey.d, keys.privateKey.n),
           step1: `${firstNum}`,
@@ -346,8 +387,7 @@ export default function Home() {
       }
     }
 
-    // Adjust shift for decryption if needed (Caesar/Vigenere)
-    const effectiveShift = mode === "decrypt" ? (26 - (shift % 26)) % 26 : shift;
+    const effectiveShift = !isEncryptMode ? (26 - (shift % 26)) % 26 : shift;
     
     const sum = (ALPHABET.indexOf(firstChar)) + effectiveShift;
     const newIndex = sum % 26;
@@ -356,7 +396,8 @@ export default function Home() {
     return { firstChar, charIndex: ALPHABET.indexOf(firstChar), shift, keyChar, sum, newIndex, newChar, effectiveShift, rsaCalc };
   };
 
-  const explanation = getExplanationData();
+  const encryptExplanation = getExplanationData(true);
+  const decryptExplanation = getExplanationData(false);
 
   return (
     <div className={`min-h-screen p-4 md:p-8 flex flex-col items-center justify-start font-sans text-slate-800 bg-gradient-to-br from-indigo-50 via-blue-50 to-cyan-50 ${isRTL ? "font-cairo" : ""}`}>
@@ -433,39 +474,28 @@ export default function Home() {
               </TabsList>
             </Tabs>
 
+            {/* Dynamic Controls based on Cipher */}
             <motion.div 
               layout
               className="glass-card rounded-3xl p-6 md:p-8 space-y-6 bg-white/80 backdrop-blur-xl border border-white/60 shadow-xl shadow-indigo-500/5"
             >
-              {/* Input Area */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                   <label className="text-sm font-bold text-slate-500 uppercase tracking-wider ml-1 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-                    {t.input_label}
-                  </label>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={resetApp}
-                    className="h-8 text-xs hover:bg-slate-100 rounded-full text-slate-400"
-                    title={t.btn_reset}
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isRTL ? "ml-1" : "mr-1"}`} />
-                    {t.btn_reset}
-                  </Button>
-                </div>
-               
-                <Textarea 
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder={activeCipher === "rsa" ? t.placeholder_rsa : t.placeholder_caesar}
-                  className="min-h-[120px] text-lg bg-white border-slate-200 focus:border-indigo-400 focus:ring-indigo-400/20 rounded-xl resize-none shadow-inner"
-                  data-testid="input-message"
-                />
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-bold text-slate-500 uppercase tracking-wider ml-1 flex items-center gap-2">
+                  <Key className="w-4 h-4" />
+                  {lang === "fr" ? "Paramètres de clé" : lang === "ar" ? "إعدادات المفتاح" : "Key Settings"}
+                </label>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={resetApp}
+                  className="h-8 text-xs hover:bg-slate-100 rounded-full text-slate-400"
+                  title={t.btn_reset}
+                >
+                  <RefreshCw className={`w-3 h-3 ${isRTL ? "ml-1" : "mr-1"}`} />
+                  {t.btn_reset}
+                </Button>
               </div>
 
-              {/* Dynamic Controls based on Cipher */}
               <div className="p-5 bg-slate-50/80 rounded-2xl border border-slate-100 space-y-4">
                 {activeCipher === "caesar" ? (
                   <div className="space-y-4">
@@ -558,270 +588,182 @@ export default function Home() {
                   </div>
                 )}
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <Button
-                  onClick={() => handleAction("encrypt")}
-                  variant={mode === "encrypt" ? "default" : "outline"}
-                  className={`h-14 text-lg rounded-xl transition-all duration-300 ${
-                    mode === "encrypt" 
-                      ? activeCipher === "caesar" 
-                        ? "bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 scale-[1.02]" 
-                        : activeCipher === "vigenere" ? "bg-cyan-600 hover:bg-cyan-700 shadow-lg shadow-cyan-200 scale-[1.02]"
-                        : "bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200 scale-[1.02]"
-                      : "hover:bg-slate-50 border-slate-200 text-slate-500"
-                  }`}
-                  data-testid="btn-encrypt"
-                >
-                  <Lock className={`w-5 h-5 ${isRTL ? "ml-2" : "mr-2"}`} />
-                  {t.btn_encrypt}
-                </Button>
-                <Button
-                  onClick={() => handleAction("decrypt")}
-                  variant={mode === "decrypt" ? "default" : "outline"}
-                  className={`h-14 text-lg rounded-xl transition-all duration-300 ${
-                    mode === "decrypt" 
-                      ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-200 scale-[1.02]" 
-                      : "hover:bg-slate-50 border-slate-200 text-slate-500"
-                  }`}
-                  data-testid="btn-decrypt"
-                >
-                  <Unlock className={`w-5 h-5 ${isRTL ? "ml-2" : "mr-2"}`} />
-                  {t.btn_decrypt}
-                </Button>
-              </div>
             </motion.div>
 
-            {/* Result Area */}
+            {/* Mathematical Animation Display */}
+            <AnimatePresence>
+              {showMathAnimation && activeCipher !== "rsa" && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9, y: -20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: -20 }}
+                  className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 rounded-2xl p-6 text-white shadow-2xl"
+                >
+                  <div className="text-center space-y-4">
+                    <div className="text-sm font-bold uppercase tracking-wider opacity-80">
+                      {lang === "fr" ? "Animation Mathématique" : lang === "ar" ? "الرسوم المتحركة الرياضية" : "Mathematical Animation"}
+                    </div>
+                    <div className="flex items-center justify-center gap-4 text-3xl font-mono">
+                      <motion.span
+                        animate={{ scale: animatingLetter.step >= 1 ? [1, 1.3, 1] : 1 }}
+                        transition={{ duration: 0.3 }}
+                        className="bg-white/20 px-4 py-2 rounded-xl"
+                      >
+                        {animatingLetter.from || "A"}
+                      </motion.span>
+                      <motion.span
+                        animate={{ opacity: animatingLetter.step >= 2 ? 1 : 0.3 }}
+                        className="text-2xl"
+                      >
+                        +
+                      </motion.span>
+                      <motion.span
+                        animate={{ scale: animatingLetter.step >= 2 ? [1, 1.3, 1] : 1 }}
+                        transition={{ duration: 0.3 }}
+                        className="bg-yellow-500/30 px-4 py-2 rounded-xl"
+                      >
+                        {caesarShift}
+                      </motion.span>
+                      <motion.span
+                        animate={{ opacity: animatingLetter.step >= 3 ? 1 : 0.3 }}
+                        className="text-2xl"
+                      >
+                        =
+                      </motion.span>
+                      <motion.span
+                        animate={{ 
+                          scale: animatingLetter.step >= 4 ? [1, 1.5, 1] : 1,
+                          backgroundColor: animatingLetter.step >= 4 ? "rgba(34, 197, 94, 0.5)" : "rgba(255, 255, 255, 0.2)"
+                        }}
+                        transition={{ duration: 0.5 }}
+                        className="px-4 py-2 rounded-xl font-bold"
+                      >
+                        {animatingLetter.to || "?"}
+                      </motion.span>
+                    </div>
+                    <motion.div
+                      animate={{ opacity: animatingLetter.step >= 3 ? 1 : 0 }}
+                      className="text-sm opacity-80 font-mono"
+                    >
+                      ({ALPHABET.indexOf(animatingLetter.from)} + {caesarShift}) mod 26 = {ALPHABET.indexOf(animatingLetter.to)}
+                    </motion.div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* ENCRYPTION Section */}
             <motion.div 
               layout
-              className={`result-card rounded-3xl p-6 md:p-8 relative overflow-hidden transition-all duration-500 bg-white border-2 ${
-                mode === "encrypt" 
-                  ? activeCipher === "caesar" ? "border-indigo-100 shadow-xl shadow-indigo-100" 
-                    : activeCipher === "vigenere" ? "border-cyan-100 shadow-xl shadow-cyan-100" 
-                    : "border-emerald-100 shadow-xl shadow-emerald-100"
-                  : "border-emerald-100 shadow-xl shadow-emerald-100"
-              }`}
+              className="glass-card rounded-3xl p-6 md:p-8 space-y-4 bg-gradient-to-br from-indigo-50 to-purple-50 backdrop-blur-xl border-2 border-indigo-200 shadow-xl shadow-indigo-500/10"
             >
-              <div className={`absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r opacity-80 ${
-                 mode === "encrypt" 
-                  ? activeCipher === "caesar" ? "from-indigo-400 via-purple-400 to-indigo-400" 
-                    : activeCipher === "vigenere" ? "from-cyan-400 via-teal-400 to-cyan-400"
-                    : "from-emerald-400 via-green-400 to-emerald-400"
-                  : "from-emerald-400 via-green-400 to-emerald-400"
-              }`} />
-              
-              <div className="flex justify-between items-start mb-6">
-                <label className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${
-                    mode === "encrypt" 
-                      ? activeCipher === "caesar" ? "bg-indigo-500" : activeCipher === "vigenere" ? "bg-cyan-500" : "bg-emerald-500"
-                      : "bg-emerald-500"
-                  }`}></span>
-                  {t.result_label}
+              <div className="flex items-center gap-3 mb-2">
+                <div className={`p-2 rounded-xl ${activeCipher === "caesar" ? "bg-indigo-600" : activeCipher === "vigenere" ? "bg-cyan-600" : "bg-emerald-600"}`}>
+                  <Lock className="w-5 h-5 text-white" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800">{t.btn_encrypt}</h3>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-sm font-bold text-indigo-700 uppercase tracking-wider ml-1 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                  {lang === "fr" ? "Message à chiffrer" : lang === "ar" ? "الرسالة للتشفير" : "Message to encrypt"}
                 </label>
-                <Badge variant="secondary" className="bg-slate-100 text-slate-500 font-normal">
-                  {result.length} {t.result_char_count}
-                </Badge>
-              </div>
-              
-              <div className="min-h-[80px] flex items-center p-4 bg-slate-50/50 rounded-xl border border-slate-100/50 mb-4">
-                {result ? (
-                  <motion.p 
-                    key={result}
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="text-2xl md:text-3xl font-mono font-medium text-slate-800 break-all leading-relaxed w-full text-left"
-                    style={{ direction: 'ltr' }} 
-                    data-testid="text-result"
-                  >
-                    {result}
-                  </motion.p>
-                ) : (
-                  <span className="text-slate-300 italic text-lg w-full text-center">{t.result_placeholder}</span>
-                )}
+                <Textarea 
+                  value={encryptMessage}
+                  onChange={(e) => { setEncryptMessage(e.target.value); triggerAnimation(); }}
+                  placeholder={activeCipher === "rsa" ? t.placeholder_rsa : t.placeholder_caesar}
+                  className="min-h-[100px] text-lg bg-white border-indigo-200 focus:border-indigo-400 focus:ring-indigo-400/20 rounded-xl resize-none shadow-inner"
+                  data-testid="input-encrypt-message"
+                />
               </div>
 
-              <div className="flex justify-end">
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="ghost" className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 gap-2">
-                      <Calculator className="w-4 h-4" />
-                      {t.btn_explain}
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-md md:max-w-lg rounded-3xl" dir={isRTL ? "rtl" : "ltr"}>
-                    <DialogHeader>
-                      <DialogTitle className="text-2xl font-bold flex items-center gap-2">
-                        <Sparkles className="w-6 h-6 text-indigo-500" />
-                        {t.dialog_title}
-                      </DialogTitle>
-                      <DialogDescription>
-                         {activeCipher === "rsa" ? t.dialog_desc_rsa : 
-                           <>{t.dialog_desc} <span className="font-bold text-indigo-600">"{explanation.firstChar}"</span>.</>
-                         }
-                      </DialogDescription>
-                    </DialogHeader>
-                    
-                    <div className="space-y-6 py-4">
-                      {activeCipher === "rsa" ? (
-                         // RSA Explanation with detailed steps
-                         <div className="space-y-4">
-                           {/* Show current keys being used */}
-                           <div className="grid grid-cols-2 gap-2 text-xs">
-                             <div className="bg-emerald-50 p-2 rounded-lg border border-emerald-100">
-                               <div className="text-[10px] text-emerald-600 font-bold uppercase">Clé Publique</div>
-                               <div className="font-mono text-emerald-800">e = {keys.publicKey.e}</div>
-                               <div className="font-mono text-emerald-800">n = {keys.publicKey.n}</div>
-                             </div>
-                             <div className="bg-red-50 p-2 rounded-lg border border-red-100">
-                               <div className="text-[10px] text-red-600 font-bold uppercase">Clé Privée</div>
-                               <div className="font-mono text-red-800">d = {keys.privateKey.d}</div>
-                               <div className="font-mono text-red-800">n = {keys.privateKey.n}</div>
-                             </div>
-                           </div>
+              <div className="flex items-center gap-3 py-2">
+                <ArrowRight className={`w-6 h-6 text-indigo-400 ${isAnimating ? "animate-pulse" : ""}`} />
+                <div className="flex-1 h-px bg-gradient-to-r from-indigo-200 via-purple-300 to-indigo-200"></div>
+                <ArrowRight className={`w-6 h-6 text-indigo-400 ${isAnimating ? "animate-pulse" : ""}`} />
+              </div>
 
-                           {/* Show how n is calculated */}
-                           <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
-                             <div className="text-xs font-bold text-blue-800 mb-2">📐 Comment calculer n:</div>
-                             <div className="font-mono text-sm text-blue-900">
-                               n = p × q = {p} × {q} = {keys.publicKey.n}
-                             </div>
-                             <div className="text-xs text-blue-600 mt-1">
-                               φ(n) = (p-1) × (q-1) = {p-1} × {q-1} = {keys.phi}
-                             </div>
-                           </div>
-                           
-                           {/* Detailed calculation steps */}
-                           <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 space-y-3">
-                             <div className="text-sm font-bold text-emerald-900 mb-3">
-                               {mode === "encrypt" ? "🔒 Étapes du chiffrement:" : "🔓 Étapes du déchiffrement:"}
-                             </div>
-                             
-                             <div className="space-y-2">
-                               <div className="flex justify-between items-center">
-                                 <span className="text-sm text-emerald-800">1️⃣ Valeur de départ (M):</span>
-                                 <span className="font-mono font-bold">{explanation.rsaCalc.m}</span>
-                               </div>
-                               
-                               <div className="flex justify-between items-center">
-                                 <span className="text-sm text-emerald-800">
-                                   2️⃣ {mode === "encrypt" ? "Exposant (e):" : "Exposant (d):"}
-                                 </span>
-                                 <span className="font-mono font-bold">{explanation.rsaCalc.e}</span>
-                               </div>
-                               
-                               <div className="flex justify-between items-center">
-                                 <span className="text-sm text-emerald-800">3️⃣ Modulo (n):</span>
-                                 <span className="font-mono font-bold">{explanation.rsaCalc.n}</span>
-                               </div>
-                               
-                               <div className="border-t-2 border-emerald-200 pt-2 mt-2">
-                                 <div className="text-xs text-emerald-700 mb-2">📝 Calcul complet:</div>
-                                 <div className="font-mono text-emerald-900 bg-white p-3 rounded border border-emerald-100 text-center">
-                                   <span className="text-lg font-bold text-blue-600">{explanation.rsaCalc.m}</span>
-                                   <span className="text-sm mx-1">^</span>
-                                   <span className="text-lg font-bold text-purple-600">{explanation.rsaCalc.e}</span>
-                                   <span className="text-sm mx-2">mod</span>
-                                   <span className="text-lg font-bold text-emerald-600">{explanation.rsaCalc.n}</span>
-                                   <span className="text-sm mx-2">=</span>
-                                   <span className="text-lg font-bold text-amber-600">?</span>
-                                 </div>
-                                 <div className="text-[10px] text-center text-slate-500 mt-1">
-                                   (M<sup className="text-[8px]">{mode === "encrypt" ? "e" : "d"}</sup> mod n)
-                                 </div>
-                               </div>
-                               
-                               <div className="bg-white p-3 rounded-lg border border-emerald-200">
-                                 <div className="text-xs text-emerald-700 mb-2">🧮 Explication pas à pas:</div>
-                                 <div className="text-xs text-slate-600 leading-relaxed space-y-1">
-                                   <p><strong>Étape 1:</strong> On prend le nombre <span className="font-mono text-blue-600 font-bold">{explanation.rsaCalc.m}</span></p>
-                                   <p><strong>Étape 2:</strong> On le multiplie par lui-même <span className="font-mono text-purple-600 font-bold">{explanation.rsaCalc.e}</span> fois</p>
-                                   <p><strong>Étape 3:</strong> On divise par <span className="font-mono text-emerald-600 font-bold">{explanation.rsaCalc.n}</span> et on garde le reste</p>
-                                   <p className="pt-1 border-t border-slate-100"><strong>Résultat:</strong> Le reste = <span className="font-mono text-amber-600 font-bold">{explanation.rsaCalc.res}</span></p>
-                                 </div>
-                               </div>
-                               
-                               <div className="border-t-2 border-emerald-300 pt-3 flex justify-between items-center bg-emerald-100 -mx-4 -mb-3 px-4 pb-3 rounded-b-xl">
-                                 <span className="text-sm font-bold text-emerald-900">✨ Résultat:</span>
-                                 <span className="font-mono font-bold text-2xl text-emerald-700">{explanation.rsaCalc.res}</span>
-                               </div>
-                             </div>
-                           </div>
-                           
-                           <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
-                             <div className="text-xs font-bold text-amber-800 mb-1">💡 Pour comprendre:</div>
-                             <div className="text-xs text-amber-700 leading-relaxed">
-                               {mode === "encrypt" 
-                                 ? `Le chiffrement utilise la clé publique (e=${keys.publicKey.e}, n=${keys.publicKey.n}). Tout le monde peut chiffrer, mais seule la personne avec la clé privée peut déchiffrer!`
-                                 : `Le déchiffrement utilise la clé privée (d=${keys.privateKey.d}, n=${keys.privateKey.n}). Seul le propriétaire de cette clé peut lire le message!`
-                               }
-                             </div>
-                           </div>
-                           
-                           <p className="text-xs text-center text-slate-500 italic">
-                             RSA utilise de très grands nombres premiers en pratique. Ici, p={p} et q={q} sont petits pour faciliter l'apprentissage.
-                           </p>
-                         </div>
-                      ) : (
-                        // Caesar/Vigenere Explanation
-                        <>
-                          <div className="flex items-center justify-center gap-2 text-center" dir="ltr">
-                            <div className="flex flex-col items-center">
-                              <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-xl font-bold text-slate-700 border border-slate-200">
-                                {explanation.firstChar}
-                              </div>
-                              <span className="text-xs text-slate-400 mt-1 font-mono">{t.dialog_index} {explanation.charIndex}</span>
-                            </div>
-                            
-                            <div className="text-slate-300 font-bold text-xl">+</div>
-                            
-                            <div className="flex flex-col items-center">
-                              <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold border ${activeCipher === 'caesar' ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-cyan-100 text-cyan-700 border-cyan-200'}`}>
-                                {activeCipher === 'caesar' ? explanation.shift : explanation.keyChar}
-                              </div>
-                              <span className="text-xs text-slate-400 mt-1 font-mono">
-                                {activeCipher === 'caesar' ? t.dialog_shift : `${t.dialog_key} "${explanation.keyChar}"`}
-                              </span>
-                            </div>
-
-                            <div className="text-slate-300 font-bold text-xl">=</div>
-
-                            <div className="flex flex-col items-center">
-                              <div className="w-12 h-12 rounded-xl bg-slate-800 text-white flex items-center justify-center text-xl font-bold shadow-lg">
-                                {explanation.newChar}
-                              </div>
-                              <span className="text-xs text-slate-400 mt-1 font-mono">{t.dialog_index} {explanation.newIndex}</span>
-                            </div>
-                          </div>
-
-                          <div className="bg-slate-50 rounded-xl p-4 space-y-2 border border-slate-100 text-sm">
-                            <p className="font-semibold text-slate-700 mb-2">{t.dialog_details}</p>
-                            <div className="grid grid-cols-[1fr_auto] gap-2 font-mono text-slate-600">
-                              <span>{t.dialog_step1}</span>
-                              <span className="font-bold">{explanation.charIndex}</span>
-                              
-                              <span>{t.dialog_step2}</span>
-                              <span className="font-bold" dir="ltr">{explanation.charIndex} + {explanation.effectiveShift} = {explanation.sum}</span>
-                              
-                              <span>{t.dialog_step3}</span>
-                              <span className="font-bold" dir="ltr">{explanation.sum} % 26 = {explanation.newIndex}</span>
-                              
-                              <span>{t.dialog_step4}</span>
-                              <span className="font-bold text-indigo-600">"{explanation.newChar}"</span>
-                            </div>
-                          </div>
-
-                          <div className="text-xs text-center text-slate-400 italic">
-                            {t.dialog_footer}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </DialogContent>
-                </Dialog>
+              <div className="space-y-3">
+                <label className="text-sm font-bold text-indigo-700 uppercase tracking-wider ml-1 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                  {lang === "fr" ? "Message chiffré" : lang === "ar" ? "الرسالة المشفرة" : "Encrypted message"}
+                </label>
+                <div className="min-h-[60px] flex items-center p-4 bg-white rounded-xl border-2 border-green-200 shadow-inner">
+                  {encryptResult ? (
+                    <motion.p 
+                      key={encryptResult}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="text-xl md:text-2xl font-mono font-medium text-green-700 break-all leading-relaxed w-full text-left"
+                      style={{ direction: 'ltr' }} 
+                      data-testid="text-encrypt-result"
+                    >
+                      {encryptResult}
+                    </motion.p>
+                  ) : (
+                    <span className="text-slate-300 italic text-lg w-full text-center">{t.result_placeholder}</span>
+                  )}
+                </div>
               </div>
             </motion.div>
+
+            {/* DECRYPTION Section */}
+            <motion.div 
+              layout
+              className="glass-card rounded-3xl p-6 md:p-8 space-y-4 bg-gradient-to-br from-emerald-50 to-teal-50 backdrop-blur-xl border-2 border-emerald-200 shadow-xl shadow-emerald-500/10"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 rounded-xl bg-emerald-600">
+                  <Unlock className="w-5 h-5 text-white" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800">{t.btn_decrypt}</h3>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-sm font-bold text-emerald-700 uppercase tracking-wider ml-1 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  {lang === "fr" ? "Message à déchiffrer" : lang === "ar" ? "الرسالة لفك التشفير" : "Message to decrypt"}
+                </label>
+                <Textarea 
+                  value={decryptMessage}
+                  onChange={(e) => { setDecryptMessage(e.target.value); triggerAnimation(); }}
+                  placeholder={activeCipher === "rsa" ? "Ex: 123 45 67..." : t.placeholder_caesar}
+                  className="min-h-[100px] text-lg bg-white border-emerald-200 focus:border-emerald-400 focus:ring-emerald-400/20 rounded-xl resize-none shadow-inner"
+                  data-testid="input-decrypt-message"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 py-2">
+                <ArrowRight className={`w-6 h-6 text-emerald-400 ${isAnimating ? "animate-pulse" : ""}`} />
+                <div className="flex-1 h-px bg-gradient-to-r from-emerald-200 via-teal-300 to-emerald-200"></div>
+                <ArrowRight className={`w-6 h-6 text-emerald-400 ${isAnimating ? "animate-pulse" : ""}`} />
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-sm font-bold text-emerald-700 uppercase tracking-wider ml-1 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  {lang === "fr" ? "Message déchiffré" : lang === "ar" ? "الرسالة المفكوكة" : "Decrypted message"}
+                </label>
+                <div className="min-h-[60px] flex items-center p-4 bg-white rounded-xl border-2 border-blue-200 shadow-inner">
+                  {decryptResult ? (
+                    <motion.p 
+                      key={decryptResult}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="text-xl md:text-2xl font-mono font-medium text-blue-700 break-all leading-relaxed w-full text-left"
+                      style={{ direction: 'ltr' }} 
+                      data-testid="text-decrypt-result"
+                    >
+                      {decryptResult}
+                    </motion.p>
+                  ) : (
+                    <span className="text-slate-300 italic text-lg w-full text-center">{t.result_placeholder}</span>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+
           </div>
 
           {/* Educational Side Panel */}
@@ -934,7 +876,7 @@ export default function Home() {
                  {t.preview_title}
                </h3>
                <div className="flex flex-wrap gap-1 justify-center" dir="ltr">
-                  {message.slice(0, 15).toUpperCase().split('').map((char, i) => {
+                  {encryptMessage.slice(0, 15).toUpperCase().split('').map((char: string, i: number) => {
                      if (!ALPHABET.includes(char)) return null;
                      
                      let shiftedChar = char;
@@ -963,7 +905,7 @@ export default function Home() {
                        </div>
                      )
                   })}
-                  {message.length === 0 && (
+                  {encryptMessage.length === 0 && (
                     <div className="text-slate-400 text-sm italic py-4">{t.preview_empty}</div>
                   )}
                </div>
@@ -975,34 +917,25 @@ export default function Home() {
                      {t.preview_title}
                   </h3>
                   
-                  {/* Show n value prominently */}
+                  {/* Show keys prominently */}
                   <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 mb-4">
-                    <div className="text-xs font-bold text-emerald-700 mb-1">
-                      {mode === "encrypt" ? "🔒 Chiffrement" : "🔓 Déchiffrement"}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <span className="text-emerald-600">
-                          {mode === "encrypt" ? "e" : "d"} = 
-                        </span>
-                        <span className="font-mono font-bold text-emerald-900 ml-1">
-                          {mode === "encrypt" ? keys.publicKey.e : keys.privateKey.d}
-                        </span>
+                    <div className="grid grid-cols-2 gap-4 text-xs">
+                      <div className="bg-green-100 p-2 rounded-lg">
+                        <div className="text-green-700 font-bold mb-1">🔒 Chiffrement</div>
+                        <div><span className="text-green-600">e = </span><span className="font-mono font-bold">{keys.publicKey.e}</span></div>
                       </div>
-                      <div>
-                        <span className="text-emerald-600">n = </span>
-                        <span className="font-mono font-bold text-emerald-900">
-                          {mode === "encrypt" ? keys.publicKey.n : keys.privateKey.n}
-                        </span>
+                      <div className="bg-blue-100 p-2 rounded-lg">
+                        <div className="text-blue-700 font-bold mb-1">🔓 Déchiffrement</div>
+                        <div><span className="text-blue-600">d = </span><span className="font-mono font-bold">{keys.privateKey.d}</span></div>
                       </div>
                     </div>
-                    <div className="text-[10px] text-emerald-500 mt-1 font-mono">
+                    <div className="text-[10px] text-emerald-500 mt-2 font-mono text-center">
                       n = {p} × {q} = {keys.publicKey.n}
                     </div>
                   </div>
                   
                   <div className="flex flex-wrap gap-2 justify-center font-mono text-xs text-emerald-800" dir="ltr">
-                    {result ? result.split(" ").slice(0, 10).map((n, i) => (
+                    {encryptResult ? encryptResult.split(" ").slice(0, 10).map((n: string, i: number) => (
                       <span key={i} className="bg-emerald-100 px-2 py-1 rounded">{n}</span>
                     )) : <span className="text-slate-400 italic">{t.preview_empty}</span>}
                   </div>
