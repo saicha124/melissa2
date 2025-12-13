@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Unlock, RefreshCw, ArrowRight, Info, Sparkles, Shield, Key, BarChart3, ChevronDown, Check } from "lucide-react";
+import { Lock, Unlock, RefreshCw, ArrowRight, Info, Sparkles, Shield, Key, BarChart3, ChevronDown, Check, Calculator } from "lucide-react";
 import { caesarCipher, vigenereCipher, ALPHABET } from "@/lib/caesar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
@@ -9,6 +9,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 export default function Home() {
   const [activeCipher, setActiveCipher] = useState<"caesar" | "vigenere">("caesar");
@@ -49,6 +57,35 @@ export default function Home() {
     setMode("encrypt");
     setResult("");
   };
+
+  // Calculation for the explanation modal
+  const getExplanationData = () => {
+    const cleanMessage = message.toUpperCase().replace(/[^A-Z]/g, "");
+    const firstChar = cleanMessage.length > 0 ? cleanMessage[0] : "A";
+    const charIndex = ALPHABET.indexOf(firstChar);
+    
+    let shift = 0;
+    let keyChar = "";
+    
+    if (activeCipher === "caesar") {
+      shift = caesarShift;
+    } else {
+      const cleanKey = vigenereKey.toUpperCase().replace(/[^A-Z]/g, "");
+      keyChar = cleanKey.length > 0 ? cleanKey[0] : "A";
+      shift = ALPHABET.indexOf(keyChar);
+    }
+
+    // Adjust shift for decryption if needed
+    const effectiveShift = mode === "decrypt" ? (26 - (shift % 26)) % 26 : shift;
+    
+    const sum = charIndex + effectiveShift;
+    const newIndex = sum % 26;
+    const newChar = ALPHABET[newIndex];
+
+    return { firstChar, charIndex, shift, keyChar, sum, newIndex, newChar, effectiveShift };
+  };
+
+  const explanation = getExplanationData();
 
   return (
     <div className="min-h-screen p-4 md:p-8 flex flex-col items-center justify-start font-sans text-slate-800 bg-gradient-to-br from-indigo-50 via-blue-50 to-cyan-50">
@@ -229,7 +266,7 @@ export default function Home() {
                 </Badge>
               </div>
               
-              <div className="min-h-[80px] flex items-center p-4 bg-slate-50/50 rounded-xl border border-slate-100/50">
+              <div className="min-h-[80px] flex items-center p-4 bg-slate-50/50 rounded-xl border border-slate-100/50 mb-4">
                 {result ? (
                   <motion.p 
                     key={result}
@@ -243,6 +280,82 @@ export default function Home() {
                 ) : (
                   <span className="text-slate-300 italic text-lg w-full text-center">Le message transformé apparaîtra ici...</span>
                 )}
+              </div>
+
+              <div className="flex justify-end">
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 gap-2">
+                      <Calculator className="w-4 h-4" />
+                      Comprendre le calcul
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-md md:max-w-lg rounded-3xl">
+                    <DialogHeader>
+                      <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+                        <Sparkles className="w-6 h-6 text-indigo-500" />
+                        La Magie des Maths
+                      </DialogTitle>
+                      <DialogDescription>
+                        Voici comment nous transformons la lettre <span className="font-bold text-indigo-600">"{explanation.firstChar}"</span>.
+                      </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="space-y-6 py-4">
+                      {/* Visual Equation */}
+                      <div className="flex items-center justify-center gap-2 text-center">
+                        <div className="flex flex-col items-center">
+                          <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-xl font-bold text-slate-700 border border-slate-200">
+                            {explanation.firstChar}
+                          </div>
+                          <span className="text-xs text-slate-400 mt-1 font-mono">Index {explanation.charIndex}</span>
+                        </div>
+                        
+                        <div className="text-slate-300 font-bold text-xl">+</div>
+                        
+                        <div className="flex flex-col items-center">
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold border ${activeCipher === 'caesar' ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-cyan-100 text-cyan-700 border-cyan-200'}`}>
+                            {activeCipher === 'caesar' ? explanation.shift : explanation.keyChar}
+                          </div>
+                          <span className="text-xs text-slate-400 mt-1 font-mono">
+                            {activeCipher === 'caesar' ? 'Décalage' : `Clé "${explanation.keyChar}"`}
+                          </span>
+                        </div>
+
+                        <div className="text-slate-300 font-bold text-xl">=</div>
+
+                        <div className="flex flex-col items-center">
+                          <div className="w-12 h-12 rounded-xl bg-slate-800 text-white flex items-center justify-center text-xl font-bold shadow-lg">
+                            {explanation.newChar}
+                          </div>
+                          <span className="text-xs text-slate-400 mt-1 font-mono">Index {explanation.newIndex}</span>
+                        </div>
+                      </div>
+
+                      {/* Detailed Steps */}
+                      <div className="bg-slate-50 rounded-xl p-4 space-y-2 border border-slate-100 text-sm">
+                        <p className="font-semibold text-slate-700 mb-2">Détails du calcul :</p>
+                        <div className="grid grid-cols-[1fr_auto] gap-2 font-mono text-slate-600">
+                          <span>1. Position de départ :</span>
+                          <span className="font-bold">{explanation.charIndex}</span>
+                          
+                          <span>2. On ajoute le décalage :</span>
+                          <span className="font-bold">{explanation.charIndex} + {explanation.effectiveShift} = {explanation.sum}</span>
+                          
+                          <span>3. Modulo 26 (reste) :</span>
+                          <span className="font-bold">{explanation.sum} % 26 = {explanation.newIndex}</span>
+                          
+                          <span>4. Nouvelle lettre :</span>
+                          <span className="font-bold text-indigo-600">"{explanation.newChar}"</span>
+                        </div>
+                      </div>
+
+                      <div className="text-xs text-center text-slate-400 italic">
+                        * Le modulo 26 permet de revenir au début de l'alphabet (Z → A)
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
               </div>
             </motion.div>
           </div>
